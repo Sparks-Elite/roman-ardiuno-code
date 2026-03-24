@@ -1,34 +1,47 @@
+// -------- SERVO LIBRARY --------
 #include <Servo.h>
 
 // -------- PIN DEFINITIONS --------
-#define trig_Pin D5
-#define echo_Pin D6
+
+// Ultrasonic
+#define TRIG D5
+#define ECHO D6
+
+// PIR Sensor
 #define PIR_PIN D7
 
+// Motor Driver (L298N)
 #define IN1 D1
 #define IN2 D2
 #define IN3 D3
 #define IN4 D4
 
-#define HEAD_SERVO_PIN D8
-#define LEFT_ARM_SERVO D0
-#define RIGHT_ARM_SERVO 3
+// Servo Pins
+#define HEAD D8
+#define ARM D0
 
 // -------- VARIABLES --------
 long duration;
 float distance;
 
-int interactionDelay = 4000;
+int interactionDelay = 20000;
 
 // Servo Objects
-Servo headServo;
-Servo leftArmServo;
-Servo rightArmServo;
+Servo M_HEAD;
+Servo M_ARM;
 
-// Head scanning
-int headAngle = 0;
-int direction = 1;   // 1 = forward, -1 = backward
-int scanSpeed = 2;   // step size (speed control)
+// Head swing variables
+int angle = 0;
+int swingAngle = 60;
+int stepDelay = 50;
+
+//Arm angle
+
+int armAngle = 0;
+int armswingAngle = 90;
+int armstepDelay = 20;
+
+
 
 #define ANGLE_FRONT 90
 
@@ -37,59 +50,61 @@ void setup()
 {
   Serial.begin(9600);
 
-  pinMode(trig_Pin, OUTPUT);
-  pinMode(echo_Pin, INPUT);
+  // Ultrasonic
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+
+  // PIR
   pinMode(PIR_PIN, INPUT);
 
+  // Motors
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
 
-  headServo.attach(HEAD_SERVO_PIN);
-  leftArmServo.attach(LEFT_ARM_SERVO);
-  rightArmServo.attach(RIGHT_ARM_SERVO);
+  // Attach Servos
+  M_HEAD.attach(HEAD);
+  M_ARM.attach(ARM);
 
-  headServo.write(90);
-  leftArmServo.write(90);
-  rightArmServo.write(90);
-
-  Serial.println("Robot Ready");
+  // Initial Positions
+  M_HEAD.write(0);
+  M_ARM.write(0);
 }
 
-// -------- HEAD SCANNING --------
-void headScan()
+// -------- HEAD SWING FUNCTION --------
+void headSwing()
 {
-  headServo.write(headAngle);
-  headAngle += direction * scanSpeed;
-
-  if(headAngle >= 180 || headAngle <= 0)
+  for(angle = 0; angle <= swingAngle; angle++)
   {
-    direction = -direction; // reverse direction
+    M_HEAD.write(angle);
+    delay(stepDelay);
   }
 
-  delay(30); // smooth movement
+  delay(2000);
+
+  for(angle = swingAngle; angle >= 0; angle--)
+  {
+    M_HEAD.write(angle);
+    delay(stepDelay);
+  }
 }
 
-// -------- ARM GREETING (FULL 0–180) --------
+// -------- ARM GESTURE --------
 void armGesture()
 {
-  // Raise arms
-  for(int i = 0; i <= 180; i += 3)
+  for(int armAngle = 70; armAngle <= 110; armAngle++)
   {
-    leftArmServo.write(i);
-    rightArmServo.write(180 - i);
-    delay(10);
+    M_ARM.write(armAngle);
+    delay(40);
   }
 
-  delay(300);
+  delay(1000);
 
-  // Lower arms
-  for(int i = 180; i >= 0; i -= 3)
+  for(int armAngle = 110; armAngle >= 70; armAngle--)
   {
-    leftArmServo.write(i);
-    rightArmServo.write(180 - i);
-    delay(10);
+    M_ARM.write(armAngle);
+    delay(40);
   }
 }
 
@@ -110,20 +125,22 @@ void moveForward()
   digitalWrite(IN4, LOW);
 }
 
-// -------- DISTANCE --------
+// -------- DISTANCE MEASURE --------
 float getDistance()
 {
-  digitalWrite(trig_Pin, LOW);
+  digitalWrite(TRIG, LOW);
   delayMicroseconds(2);
 
-  digitalWrite(trig_Pin, HIGH);
+  digitalWrite(TRIG, HIGH);
   delayMicroseconds(10);
 
-  digitalWrite(trig_Pin, LOW);
+  digitalWrite(TRIG, LOW);
 
-  duration = pulseIn(echo_Pin, HIGH);
+  duration = pulseIn(ECHO, HIGH, 30000);
 
-  return duration * 0.034 / 2;
+  distance = duration * 0.034 / 2;
+
+  return distance;
 }
 
 // -------- LOOP --------
@@ -134,46 +151,51 @@ void loop()
   Serial.print("Distance: ");
   Serial.println(distance);
 
-  // Always scan head
-  headScan();
-
-  // Object detected
+  // -------- OBJECT DETECTED --------
   if(distance < 30)
   {
     Serial.println("Object Detected");
 
+    delay(5000);
+
     unsigned long startTime = millis();
     bool humanDetected = false;
 
-    // PIR detection
-    while(millis() - startTime < 3000)
+    // PIR CHECK
+    while(millis() - startTime < 10000)
     {
       if(digitalRead(PIR_PIN) == HIGH)
       {
         humanDetected = true;
-        Serial.println("Human Detected");
+        Serial.println("Human Motion Detected");
         break;
       }
-      headScan(); // continue scanning while checking
     }
 
+    // -------- HUMAN CONFIRMED --------
     if(humanDetected)
     {
       stopMotors();
 
-      // Face human
-      headServo.write(ANGLE_FRONT);
+      // Face visitor
+      M_HEAD.write(ANGLE_FRONT);
 
       // Greeting
       armGesture();
 
+      // Wait interaction
       delay(interactionDelay);
     }
   }
+
+  // -------- NO OBJECT --------
   else
   {
     moveForward();
+
+    // Idle animation
+    headSwing();
   }
 
-  delay(50);
+  delay(500);
 }
